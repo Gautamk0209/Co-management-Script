@@ -1,16 +1,23 @@
 <#PSScriptInfo
 
+
 .VERSION 2.0
 
+
 .AUTHOR Gautam Kumar
+
+
 
 .RELEASENOTES
 Version 2.0: Stable version.Tested for around 1k devices.
 
+
 .DESCRIPTION 
-co-management details and detecting potential issues in Co-management
+This script gets co-management details and detects potential issues in Co-management
 Get log errors and event log error details for Co-management along with state message details.
 Co-management success or failure details including co-management workload, hybrid join state, enrollemet state etc
+it also does Os version and shallow mdm cert check
+Please test the script in your env before using for bigger chunk of device
 
 #> 
 
@@ -18,17 +25,14 @@ Co-management success or failure details including co-management workload, hybri
 $logpath = "C:\Windows\CCM\Logs"
 #Getting data from different source to be used to create co-management report
 try {
-    $checksuccess1 = Select-String -SimpleMatch "Machine is already enrolled with MDM" -Path "$logpath\CoManagementHandler.log" -Quiet
-    $eventlog1 = Get-WinEvent -LogName "Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin" | where { ($_.Id -eq 75) } | select -First 1
+    $checksuccess1 = Get-WmiObject -ClassName "CCM_System" -Namespace "root\ccm\invagt" -ErrorAction SilentlyContinue
     $policycheck = Get-WmiObject -Namespace "root/ccm/policy/Machine" -Query "SELECT * FROM CCM_CoMgmt_Configuration"
-    $eventlog2 = Get-WinEvent -LogName "Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin" | where { ($_.Id -eq 76) } | select -Property id, message, TimeCreated -First 2
-    $workload = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\DeviceManageabilityCSP\Provider\WMI_Bridge_Server"
-    #Quering for state message which needs admin access
-    $statemsg = get-wmiobject -namespace root\ccm\statemsg -query "select * from ccm_statemsg where topictype=810" -ErrorAction SilentlyContinue
+    $eventlog2 = Get-WinEvent -LogName "Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin" | Where-Object { ($_.Id -eq 76) } | Select-Object -Property id, message, TimeCreated -First 2
+    $workload = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\DeviceManageabilityCSP\Provider\WMI_Bridge_Server" 
 }
 catch {
     #Write-Output "Error detected in getting initial details"
-    #Write-Output = $_
+    #Write-Output = $_.Exception.Message
 }
 #Getting guid from enrollment task and using it to get enrollment details from registry
 try {
@@ -40,8 +44,25 @@ try {
 }
 catch {
     #Write-Output "Error detected while checking co-management status"
-    #Write-Output $_
+    #Write-Output $_.Exception.Message
 }
+#Function for OS version and MDM cert check 
+Function Check-Osversion_mdmcert() {
+    try {
+        $os = Get-ComputerInfo OsVersion, WindowsVersion
+        $cert = Get-ChildItem -Path Cert:\LocalMachine\My | Where-Object -FilterScript { $_.Issuer -like "*MDM DEVICE CA*" } 
+        If ($cert.NotAfter -ge (get-date)) {
+            Write-Output "OS/Windows version - $($os.OsVersion,$os.WindowsVersion): MDM cert exists issued by $($cert.Issuer) expiring on $($cert.NotAfter)"
+        }
+        Else {
+            Write-Output "OS/Windows version - $($os.OsVersion,$os.WindowsVersion): MDM cert doesnt exist or expired $($cert.NotAfter)"
+        }
+    }
+    catch {
+        Write-Output $_.Exception.Message
+    }
+}
+$certcheck = Check-Osversion_mdmcert
 #function to convert co-management workload value into workload strings
 Function Comange-workload() {
     $w2 = $workload.ConfigInfo
@@ -65,7 +86,7 @@ Function Comange-workload() {
         Write-Output "No workload assigned"
     }
 }
-#Checking hybrid azure AD join and AzureADPRT status
+#Checking hybrid azure AD join status
 Function HAADcheck() {
     $m1 = (dsregcmd /status)
     $m = ($m1 | Select-String -SimpleMatch "azureadjoin").ToString()
@@ -74,25 +95,26 @@ Function HAADcheck() {
     $z = $z.Replace(" ", "")
     if ($z -eq $m) {
         Write-Output "Device is already hybrid joined"
-        (($m1 | Select-String -SimpleMatch "AzureAdPrt :").ToString()).Replace(" ", "")
     }
     else {
         Write-Output "Hybrid join not detected, getting event logs and triggering HAAD task"
-        Get-WinEvent -LogName "Microsoft-Windows-User Device Registration/Admin" | where { ($_.Id -eq 304) -or ($_.Id -eq 305) -or ($_.Id -eq 204) } | select -Property id, message, TimeCreated  -First 3 
+        Get-WinEvent -LogName "Microsoft-Windows-User Device Registration/Admin" | Where-Object { ($_.Id -eq 304) -or ($_.Id -eq 305) -or ($_.Id -eq 204) } | Select-Object -Property id, message, TimeCreated  -First 3 
         Start-ScheduledTask "\Microsoft\Windows\Workplace Join\Automatic-Device-Join"
     }
 }
-#Refining co-management state message
+#Getting and refining co-management state message
 try {
+    #Quering for state message which needs admin access
+    $statemsg = get-wmiobject -namespace root\ccm\statemsg -query "select * from ccm_statemsg where topictype=810" -ErrorAction SilentlyContinue
     $msg = $statemsg.StateDetails.ToString()
     $s1 = $msg.Substring($msg.IndexOf('MDMEnrollment'), ($msg.IndexOf('/><ServiceUri')) - ($msg.IndexOf('MDMEnrollment')))
     $s2 = $msg.Substring($msg.IndexOf('ScheduledEnrollTime'), ($msg.IndexOf('/><WorkloadFlags')) - ($msg.IndexOf('ScheduledEnrollTime')))
 }
 catch {
-    #Write-Output $_
+    $s1 = Write-Output "Error getting state message with access denied: $($_.Exception.Message)"
 }
 
-if (($checksuccess1 -ne 'True') -and ($eventlog1.id -ne 75)) {
+if ($checksuccess1.CoManaged -ne 'True') {
     #Getting error details from co-management handler log
     try {
         $checkerror = Select-String -SimpleMatch "Failed" -Path "$logpath\CoManagementHandler.log"
@@ -109,10 +131,8 @@ if (($checksuccess1 -ne 'True') -and ($eventlog1.id -ne 75)) {
     }
 
     catch {
-        #Write-Output "Issue accessing co-management handler log"
-        #Write-Output $_
+        #Write-Output "Error accessing co-managementhandler log: $_.Exception.Message"
     }
-
     #Calling Hybrid Azure AD check
     $haad = HAADcheck
     #Checking Dmwappush service state
@@ -120,6 +140,7 @@ if (($checksuccess1 -ne 'True') -and ($eventlog1.id -ne 75)) {
     $Prop = [ordered]@{              
         'Status'                  = 'Not Co-Managed'
         'Policy_mdmurl'           = $policycheck.MDMEnrollmentUrl
+        'OS and MDM cert check'   = $certcheck
         'HAADJ_status'            = $haad
         'Co-manage state msg'     = "$s1 $s2"
         'Dmwappushservice_status' = "<starttype = $($service.StartType)> <status = $($service.Status)>"
@@ -133,14 +154,14 @@ if (($checksuccess1 -ne 'True') -and ($eventlog1.id -ne 75)) {
 Else {
     $workloads = Comange-workload
     $Prop = [ordered]@{ 
-        'Status'              = 'Co-Managed'
-        'Co-manage state_msg' = $s1
-        'Policy_mdmurl'       = $policycheck.MDMEnrollmentUrl
-        'Co-manage workloads' = $workloads
-        'EnrollmentState'     = $Enrollment.EnrollmentState              
+        'Status'                = 'Co-Managed'
+        'Co-manage state_msg'   = $s1
+        'OS and MDM cert check' = $certcheck
+        'Policy_mdmurl'         = $policycheck.MDMEnrollmentUrl
+        'Co-manage workloads'   = $workloads
+        'EnrollmentState'       = $Enrollment.EnrollmentState              
     }
 
     $Obj = New-Object -TypeName PSObject -Property $Prop 
     Write-Output $Obj
-
 }
