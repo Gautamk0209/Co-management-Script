@@ -9,7 +9,7 @@
 
 
 .RELEASENOTES
-Version 2.0: Stable version.Tested for around 1k devices.
+Version 2.0: Stable version. Tested for around 1k devices.
 
 
 .DESCRIPTION 
@@ -17,7 +17,8 @@ This script gets co-management details and detects potential issues in Co-manage
 Get log errors and event log error details for Co-management along with state message details.
 Co-management success or failure details including co-management workload, hybrid join state, enrollemet state etc
 it also does Os version and shallow mdm cert check
-Please test the script in your env before using for bigger chunk of device
+Please test the script in your env before using for bigger chunk of device as entire risk arising
+out of the use or performance of the sample script and documentation remains with you.
 
 #> 
 
