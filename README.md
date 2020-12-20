@@ -14,4 +14,4 @@ If the co-management autoenrollent policy is removed (removing device from co-ma
 
 Script is not design for scenario where machine is removed from co-management pilot/All and expect it to show up as not co-managed as it doesnt revert state and only autoenrollment CI is removed to stop any future enrollment through MEMCM.
 
-This script is doing shallow mdm cert check, which is just looking for cert with issuer by attribute, hence please validate it for you env and make required changes if needed.
+This script is doing shallow mdm cert check, which is just looking for cert with issuer by attribute, hence please validate it for your env and make changes if required.
