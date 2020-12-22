@@ -8,7 +8,7 @@ For not co-managed devices, We get status, policy and mdm url check, co-manageme
 
 In this script, quering for state message would need admin access. Deploying this through MEMCM script feature will  get complete details, while executing it manually for devices with no admin previllage will not return co-manage state information.
 
-All the catch block has been commented to avoid bulk output during errors when deployed through MEMCM. We can un-comment it as required.
+Most catch blocks have been commented to avoid bulk output during errors when deployed through MEMCM. We can un-comment it as required.
 
 If the co-management autoenrollent policy is removed (removing device from co-management collection), MDM url remains intact hence will show up. The co-management CIs which gets removed is not checked.
 
